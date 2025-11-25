@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>YouTube Playlist Reorder</title>
+    <link rel="stylesheet" type="text/css" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <h1>Playlist Reorder</h1>
+        <p>Reorder videos in the current playlist by duration.</p>
+        
+        <div class="input-group">
+            <label for="max-duration">Max Duration (minutes):</label>
+            <input type="number" id="max-duration" value="11" min="1">
+            <small>Only reorder videos under this duration.</small>
+        </div>
+
+        <div class="input-group">
+            <label for="sort-order">Sort Order:</label>
+            <select id="sort-order">
+                <option value="asc" selected>Shortest to Longest</option>
+                <option value="desc">Longest to Shortest</option>
+            </select>
+        </div>
+
+        <button id="reorder-btn">Reorder Playlist</button>
+        <div id="confirmation-controls" style="display: none;">
+            <button id="proceed-btn">Proceed</button>
+            <button id="cancel-btn">Cancel</button>
+        </div>
+        <div id="status"></div>
+    </div>
+    <script src="popup.js"></script>
+</body>
+</html>
