@@ -1,94 +1,177 @@
+const reorderForm = document.getElementById('reorderForm');
+const startButton = document.getElementById('startReorder');
+const cancelButton = document.getElementById('cancelReorder');
+const confirmButton = document.getElementById('confirmButton');
+const editButton = document.getElementById('editButton');
+const statusText = document.getElementById('status-text');
+const orderSelect = document.getElementById('order');
+const maxLengthInput = document.getElementById('maxLength');
+const progressBarContainer = document.getElementById('progress-bar-container');
+const progressBar = document.getElementById('progress-bar');
+const settingsView = document.getElementById('settings-view');
+const previewView = document.getElementById('preview-view');
+const previewList = document.getElementById('preview-list');
+
+
+function saveSettings() {
+  const settings = {
+    order: orderSelect.value,
+    maxLength: maxLengthInput.value
+  };
+  chrome.storage.local.set({ reorder_settings: settings });
+}
+
+function loadSettings() {
+  chrome.storage.local.get('reorder_settings', (data) => {
+    if (data.reorder_settings) {
+      orderSelect.value = data.reorder_settings.order || 'asc';
+      maxLengthInput.value = data.reorder_settings.maxLength || '0';
+    }
+  });
+}
+
+function showView(viewName) {
+    settingsView.style.display = viewName === 'settings' ? 'block' : 'none';
+    previewView.style.display = viewName === 'preview' ? 'block' : 'none';
+}
+
+function updateUI(status) {
+  if (!status || status.state === 'idle' || !status.state) {
+    statusText.textContent = 'Ready to sort.';
+    startButton.disabled = false;
+    cancelButton.style.display = 'none';
+    cancelButton.disabled = false;
+    orderSelect.disabled = false;
+    maxLengthInput.disabled = false;
+    progressBarContainer.style.display = 'none';
+    progressBar.style.width = '0%';
+    showView('settings');
+  } else if (status.state === 'gathering') {
+    statusText.textContent = status.message || 'Gathering videos...';
+    startButton.disabled = true;
+    cancelButton.style.display = 'block';
+    orderSelect.disabled = true;
+    maxLengthInput.disabled = true;
+    progressBarContainer.style.display = 'none';
+    showView('settings');
+  } else if (status.state === 'preview') {
+    statusText.textContent = `Found ${status.total} videos. Confirm new order.`;
+    previewList.innerHTML = '';
+    status.plan.forEach(video => {
+        const item = document.createElement('div');
+        const minutes = Math.floor(video.duration / 60);
+        const seconds = video.duration % 60;
+        item.textContent = `(${minutes}:${seconds.toString().padStart(2, '0')}) ${video.title}`;
+        item.style.whiteSpace = 'nowrap';
+        item.style.overflow = 'hidden';
+        item.style.textOverflow = 'ellipsis';
+        previewList.appendChild(item);
+    });
+    showView('preview');
+  } else if (status.state === 'reordering') {
+    const percentage = status.total > 0 ? Math.round((status.processed / status.total) * 100) : 0;
+    statusText.textContent = `Reordering... (${status.processed}/${status.total})`;
+    startButton.disabled = true;
+    cancelButton.style.display = 'block';
+    cancelButton.disabled = false;
+    orderSelect.disabled = true;
+    maxLengthInput.disabled = true;
+    progressBarContainer.style.display = 'block';
+    progressBar.style.width = `${percentage}%`;
+    showView('settings');
+  } else if (status.state === 'complete') {
+    statusText.textContent = `Reordering complete!`;
+    startButton.disabled = false;
+    cancelButton.style.display = 'none';
+    cancelButton.disabled = false;
+    orderSelect.disabled = false;
+    maxLengthInput.disabled = false;
+    progressBarContainer.style.display = 'block';
+    progressBar.style.width = '100%';
+    showView('settings');
+  } else if (status.state === 'error') {
+    statusText.textContent = `Error: ${status.message}`;
+    startButton.disabled = false;
+    cancelButton.style.display = 'none';
+    cancelButton.disabled = false;
+    orderSelect.disabled = false;
+    maxLengthInput.disabled = false;
+    progressBarContainer.style.display = 'none';
+    progressBar.style.width = '0%';
+    showView('settings');
+  }
+}
+
 document.addEventListener('DOMContentLoaded', () => {
-    const reorderBtn = document.getElementById('reorder-btn');
-    const confirmationControls = document.getElementById('confirmation-controls');
-    const proceedBtn = document.getElementById('proceed-btn');
-    const cancelBtn = document.getElementById('cancel-btn');
-    const maxDurationInput = document.getElementById('max-duration');
-    const sortOrderSelect = document.getElementById('sort-order');
-    const statusDiv = document.getElementById('status');
- 
-    // Load saved settings
-    chrome.storage.sync.get(['maxDuration', 'sortOrder'], (result) => {
-        if (result.maxDuration) {
-            maxDurationInput.value = result.maxDuration;
-        }
-        if (result.sortOrder) {
-            sortOrderSelect.value = result.sortOrder;
-        }
-    });
- 
-    reorderBtn.addEventListener('click', async () => {
-        const maxDuration = parseInt(maxDurationInput.value, 10);
-        const sortOrder = sortOrderSelect.value;
+  loadSettings();
+  // Initial status check when popup opens
+  chrome.storage.local.get('reorder_status', (data) => {
+    // If the last known state was 'complete' or 'preview', reset to 'idle' when opening the popup.
+    if (data.reorder_status && data.reorder_status.state === 'complete') {
+      chrome.storage.local.set({ 'reorder_status': { state: 'idle' } }, () => updateUI({ state: 'idle' }));
+      return;
+    }
+    updateUI(data.reorder_status);
+  });
+});
 
-        // Save settings
-        chrome.storage.sync.set({ maxDuration, sortOrder });
- 
-        const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+// Listen for status changes from the content script
+chrome.storage.onChanged.addListener((changes, namespace) => {
+  if (namespace === 'local' && changes.reorder_status) {
+    updateUI(changes.reorder_status.newValue);
+  }
+});
 
-        if (!tab.url || !tab.url.includes("youtube.com/playlist?list=")) {
-            statusDiv.textContent = "Error: Not a YouTube playlist page.";
-            return;
-        }
- 
-        reorderBtn.disabled = true; // Disable button to prevent multiple clicks
-        statusDiv.textContent = 'Starting...';
+reorderForm.addEventListener('submit', (e) => {
+  e.preventDefault();
+  saveSettings();
 
-        try {
-            await chrome.scripting.executeScript({
-                target: { tabId: tab.id },
-                files: ['content_script.js']
-            });
+  const order = orderSelect.value;
+  const maxLength = parseInt(maxLengthInput.value, 10) * 60; // convert to seconds
 
-            // Send message to content script to start the process
-            chrome.tabs.sendMessage(tab.id, {
-                action: "reorder",
-                maxDuration: maxDuration,
-                sortOrder: sortOrder
-            });
+  chrome.runtime.sendMessage({ from: 'popup', action: 'generatePlan', order: order, maxLength: maxLength }, (response) => {
+    if (chrome.runtime.lastError) {
+      statusText.textContent = "Error: Could not connect to the YouTube page. Please refresh the page and try again.";
+      console.error(chrome.runtime.lastError.message);
+      return;
+    }
+    if (response && response.status === 'started') {
+      // The UI will update via the storage listener.
+    } else if (response && response.status === 'error') {
+      statusText.textContent = `Error: ${response.message}`;
+    }
+  });
+});
 
-        } catch (e) {
-            console.error(e);
-            statusDiv.textContent = 'Error injecting script.';
-            reorderBtn.disabled = false;
-        }
-    });
- 
-    proceedBtn.addEventListener('click', async () => {
-        const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-        chrome.tabs.sendMessage(tab.id, { action: "proceedReorder" });
- 
-        confirmationControls.style.display = 'none';
-        reorderBtn.style.display = 'block';
-        reorderBtn.disabled = true;
-        statusDiv.innerHTML = 'Reordering in progress...';
-    });
- 
-    cancelBtn.addEventListener('click', async () => {
-        const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-        chrome.tabs.sendMessage(tab.id, { action: "cancelReorder" });
- 
-        confirmationControls.style.display = 'none';
-        reorderBtn.style.display = 'block';
-        reorderBtn.disabled = false;
-        statusDiv.textContent = 'Reordering cancelled.';
-    });
-
-    // Listen for status updates from the content script
-    chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-        if (request.action === "updateStatus") {
-            statusDiv.innerHTML = request.message;
- 
-            if (request.confirm) {
-                // Show confirmation buttons, hide reorder button
-                reorderBtn.style.display = 'none';
-                confirmationControls.style.display = 'flex';
-            } else if (request.done) {
-                // Process finished, reset UI
-                reorderBtn.style.display = 'block';
-                reorderBtn.disabled = false;
-                confirmationControls.style.display = 'none';
-            }
+confirmButton.addEventListener('click', () => {
+    chrome.runtime.sendMessage({ from: 'popup', action: 'executeReorder' }, (response) => {
+        if (response && response.status === 'executing') {
+            // UI will update via storage listener
         }
     });
 });
+
+editButton.addEventListener('click', () => {
+    // Send a cancel message to reset the state in the content script and then update UI
+    chrome.runtime.sendMessage({ from: 'popup', action: 'cancelReorder' }, () => {
+        updateUI({ state: 'idle' });
+    });
+});
+
+cancelButton.addEventListener('click', () => {
+  chrome.runtime.sendMessage({ from: 'popup', action: 'cancelReorder' }, (response) => {
+    if (chrome.runtime.lastError) {
+      statusText.textContent = "Error: Could not send cancel command.";
+      console.error(chrome.runtime.lastError.message);
+      return;
+    }
+    if (response && response.status === 'cancelling') {
+      statusText.textContent = 'Operation cancelled.';
+      cancelButton.disabled = true; // Prevent multiple clicks
+      updateUI({ state: 'idle' });
+    }
+  });
+});
+
+orderSelect.addEventListener('change', saveSettings);
+maxLengthInput.addEventListener('change', saveSettings);
