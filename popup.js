@@ -132,7 +132,6 @@ reorderForm.addEventListener('submit', (e) => {
   chrome.runtime.sendMessage({ from: 'popup', action: 'generatePlan', order: order, maxLength: maxLength }, (response) => {
     if (chrome.runtime.lastError) {
       statusText.textContent = "Error: Could not connect to the YouTube page. Please refresh the page and try again.";
-      console.error(chrome.runtime.lastError.message);
       return;
     }
     if (response && response.status === 'started') {
@@ -162,7 +161,6 @@ cancelButton.addEventListener('click', () => {
   chrome.runtime.sendMessage({ from: 'popup', action: 'cancelReorder' }, (response) => {
     if (chrome.runtime.lastError) {
       statusText.textContent = "Error: Could not send cancel command.";
-      console.error(chrome.runtime.lastError.message);
       return;
     }
     if (response && response.status === 'cancelling') {
@@ -175,3 +173,12 @@ cancelButton.addEventListener('click', () => {
 
 orderSelect.addEventListener('change', saveSettings);
 maxLengthInput.addEventListener('change', saveSettings);
+
+// For testing purposes
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = {
+    updateUI,
+    loadSettings,
+    saveSettings,
+  };
+}

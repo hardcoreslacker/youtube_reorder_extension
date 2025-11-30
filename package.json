@@ -1,0 +1,14 @@
+{
+  "name": "youtube_reorder_extension",
+  "version": "1.0.0",
+  "description": "Chrome extension to re-order the Watch Later playlist",
+  "main": "popup.js",
+  "scripts": {
+    "test": "jest"
+  },
+  "devDependencies": {
+    "jest": "^27.5.1",
+    "jest-chrome": "^0.8.0",
+    "jest-environment-jsdom": "^27.5.1"
+  }
+}
